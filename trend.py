@@ -74,17 +74,17 @@ def search_aljazeera_with_selenium(topic, driver):
     Returns:
         bool: True if search results are found, False otherwise.
     """
-    query = quote_plus(topic)
+    exact_phrase_query = f'"{topic}"'
+    query = quote_plus(exact_phrase_query)
     url = f"https://www.aljazeera.net/search/{query}"
-    print(f"Searching Al Jazeera for: {topic}...")
-    
+    print(f"Searching Al Jazeera for exact phrase: {exact_phrase_query}...")
+
     try:
         driver.get(url)
         # Wait up to 10 seconds for the search results container to appear.
         # Wait for EITHER the success element OR the no-results element.
         WebDriverWait(driver, 10).until(
             EC.any_of(
-                EC.presence_of_element_located((By.CSS_SELECTOR, ".search-summary__query")),
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".search-results__no-results"))
             )
         )
@@ -95,19 +95,16 @@ def search_aljazeera_with_selenium(topic, driver):
         #return len(articles) > 0
 
         # Now, check which element was actually found.
-        if driver.find_elements(By.CSS_SELECTOR, ".search-summary__query"):
-            print(f"Results found for '{topic}'.")
-            return True
-        elif driver.find_elements(By.CSS_SELECTOR, ".search-results__no-results"):
+        if driver.find_elements(By.CSS_SELECTOR, ".search-results__no-results"):
             print(f"Confirmed: No results for '{topic}'.")
             return False
         else:
-            return False
+            return True
             
     except TimeoutException:
        # This will be triggered if the .search-summary__query element does not appear.
-        print(f"No results found for '{topic}' on Al Jazeera.")
-        return False
+        print(f"Results found for '{topic}' on Al Jazeera.")
+        return True
     except WebDriverException as e:
         print(f"A browser error occurred while searching for '{topic}': {e}")
         return False
