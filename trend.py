@@ -12,18 +12,50 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-def get_top_wikipedia_arabic_topics(date_str, top_n=10):
+
+# Define exclusion patterns - easily customizable
+EXCLUSION_PATTERNS = [
+#--- General Exclusions ---
+الصفحة_الرئيسة
+خاص:بحث
+]
+
+
+def should_exclude_article(article_title, exclusion_patterns):
+    """
+    Checks if an article title contains any of the exclusion patterns.
+    
+    Args:
+        article_title (str): The article title to check.
+        exclusion_patterns (list): List of strings to exclude.
+    
+    Returns:
+        bool: True if the article should be excluded, False otherwise.
+    """
+    for pattern in exclusion_patterns:
+        if pattern in article_title:
+            return True
+    return False
+
+
+def get_top_wikipedia_arabic_topics(date_str, top_n=10, exclusion_patterns=None):
     """
     Fetches the top N most viewed articles from Arabic Wikipedia for a specific date.
     
     Args:
         date_str (str): The date in 'YYYY-MM-DD' format.
         top_n (int): The number of top articles to fetch.
+        exclusion_patterns (list): List of strings to exclude from results.
 
     Returns:
         list: A list of dictionaries, each containing an 'article' and its 'views'.
     """
+    if exclusion_patterns is None:
+        exclusion_patterns = EXCLUSION_PATTERNS
+        
     print(f"Fetching top {top_n} Wikipedia articles for {date_str}...")
+    print(f"Excluding articles containing: {', '.join(exclusion_patterns)}")
+    
     try:
         dt = datetime.strptime(date_str, '%Y-%m-%d')
         year, month, day = dt.strftime('%Y'), dt.strftime('%m'), dt.strftime('%d')
@@ -39,13 +71,13 @@ def get_top_wikipedia_arabic_topics(date_str, top_n=10):
         
         data = response.json()
         
-        top_articles = []
+        # Filter articles using the exclusion function
         articles = [
             item for item in data.get('items', [])[0].get('articles', [])
-            if "بوابة:" not in item['article'] and "الصفحة_الرئيسية" not in item['article'] and "الصفحة الرئيسة" not in item['article']
-            and "خاص:بحث" not in item['article'] and "تصنيف:أفلام إثارة جنسية" not in item['article'] and "تصنيف:ممثلات إباحيات أمريكيات" not in item ['article']
+            if not should_exclude_article(item['article'], exclusion_patterns)
         ]
-
+        
+        top_articles = []
         for item in articles[:top_n]:
             top_articles.append({
                 'rank': item['rank'],
@@ -53,7 +85,7 @@ def get_top_wikipedia_arabic_topics(date_str, top_n=10):
                 'views': item['views']
             })
             
-        print("Successfully fetched Wikipedia data.")
+        print(f"Successfully fetched {len(top_articles)} Wikipedia articles (after filtering).")
         return top_articles
         
     except requests.exceptions.RequestException as e:
@@ -62,6 +94,7 @@ def get_top_wikipedia_arabic_topics(date_str, top_n=10):
     except (IndexError, KeyError) as e:
         print(f"Error parsing Wikipedia API response for {date_str}. Data might not be available yet. Details: {e}")
         return []
+
 
 def search_aljazeera_with_selenium(topic, driver):
     """
@@ -102,12 +135,13 @@ def search_aljazeera_with_selenium(topic, driver):
             return True
             
     except TimeoutException:
-       # This will be triggered if the .search-summary__query element does not appear.
+        # This will be triggered if the .search-summary__query element does not appear.
         print(f"Results found for '{topic}' on Al Jazeera.")
         return True
     except WebDriverException as e:
         print(f"A browser error occurred while searching for '{topic}': {e}")
         return False
+
 
 def save_to_json(data, filename):
     """Saves data to a JSON file with UTF-8 encoding."""
@@ -115,6 +149,7 @@ def save_to_json(data, filename):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
     print("JSON file saved successfully.")
+
 
 def export_to_csv(data, filename):
     """Exports a list of dictionaries to a CSV file."""
@@ -129,11 +164,49 @@ def export_to_csv(data, filename):
         writer.writerows(data)
     print("CSV file exported successfully.")
 
-def main(date_str, top_n):
+
+def load_exclusions_from_file(filepath):
+    """
+    Loads exclusion patterns from a text file (one pattern per line).
+    
+    Args:
+        filepath (str): Path to the exclusion file.
+    
+    Returns:
+        list: List of exclusion patterns.
+    """
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            patterns = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        print(f"Loaded {len(patterns)} exclusion patterns from {filepath}")
+        return patterns
+    except FileNotFoundError:
+        print(f"Exclusion file '{filepath}' not found. Using default exclusions.")
+        return EXCLUSION_PATTERNS
+
+
+def main(date_str, top_n, exclusion_file=None, custom_exclusions=None):
     """
     Main function to fetch, search, and save trending topics.
+    
+    Args:
+        date_str (str): Date in YYYY-MM-DD format.
+        top_n (int): Number of top articles to fetch.
+        exclusion_file (str): Path to file containing exclusion patterns.
+        custom_exclusions (list): Additional exclusion patterns to add.
     """
-    trending_topics = get_top_wikipedia_arabic_topics(date_str, top_n)
+    # Determine which exclusions to use
+    if exclusion_file:
+        exclusions = load_exclusions_from_file(exclusion_file)
+    else:
+        exclusions = EXCLUSION_PATTERNS.copy()
+    
+    # Add any custom exclusions passed via command line
+    if custom_exclusions:
+        exclusions.extend(custom_exclusions)
+        print(f"Added {len(custom_exclusions)} custom exclusion(s).")
+    
+    trending_topics = get_top_wikipedia_arabic_topics(date_str, top_n, exclusions)
     
     if not trending_topics:
         print("Could not retrieve trending topics. Exiting.")
@@ -156,7 +229,7 @@ def main(date_str, top_n):
         topic['aljazeera_coverage'] = "نعم" if coverage_found else "لا"
     
     # --- Cleanup and Save ---
-    driver.quit() # Close the browser session
+    driver.quit()  # Close the browser session
     print("\nBrowser closed.")
     
     json_filename = f"trending_{date_str}.json"
@@ -191,7 +264,20 @@ if __name__ == '__main__':
         help="The number of top articles to fetch. Defaults to 10."
     )
     
+    parser.add_argument(
+        "--exclusion-file",
+        type=str,
+        help="Path to a text file containing exclusion patterns (one per line)."
+    )
+    
+    parser.add_argument(
+        "--exclude",
+        type=str,
+        action='append',
+        help="Add a custom exclusion pattern. Can be used multiple times."
+    )
+    
     args = parser.parse_args()
     
     # Call the main function with the provided or default arguments
-    main(args.date, args.top_n)
+    main(args.date, args.top_n, args.exclusion_file, args.exclude)
