@@ -14,11 +14,8 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 # Define exclusion patterns - easily customizable
-EXCLUSION_PATTERNS = [
 #--- General Exclusions ---
-الصفحة_الرئيسة
-خاص:بحث
-]
+EXCLUSION_PATTERNS = []
 
 
 def should_exclude_article(article_title, exclusion_patterns):
